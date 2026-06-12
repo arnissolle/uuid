@@ -86,10 +86,12 @@ For timestamp UUIDs, namespace UUIDs, and other options read on ...
 | [`uuid.v1ToV6()`](#uuidv1tov6uuid) | Create a version 6 UUID from a version 1 UUID | New in `uuid@10` |
 | [`uuid.v3()`](#uuidv3name-namespace-buffer-offset) | Create a version 3 (namespace w/ MD5) UUID |  |
 | [`uuid.v4()`](#uuidv4options-buffer-offset) | Create a version 4 (random) UUID |  |
+| [`uuid.v4ToV7()`](#uuidv4tov7uuid-key) | Recover a version 7 UUID from a version 4 UUID created by `v7ToV4()` |  |
 | [`uuid.v5()`](#uuidv5name-namespace-buffer-offset) | Create a version 5 (namespace w/ SHA-1) UUID |  |
 | [`uuid.v6()`](#uuidv6options-buffer-offset) | Create a version 6 (timestamp, reordered) UUID | New in `uuid@10` |
 | [`uuid.v6ToV1()`](#uuidv6tov1uuid) | Create a version 1 UUID from a version 6 UUID | New in `uuid@10` |
 | [`uuid.v7()`](#uuidv7options-buffer-offset) | Create a version 7 (Unix Epoch time-based) UUID | New in `uuid@10` |
+| [`uuid.v7ToV4()`](#uuidv7tov4uuid-key) | Convert a version 7 UUID to a version 4 UUID (reversible timestamp masking) |  |
 | ~~[`uuid.v8()`](#uuidv8)~~ | "Intentionally left blank" |  |
 | [`uuid.validate()`](#uuidvalidatestr) | Test a string to see if it is a valid UUID | New in `uuid@8.3` |
 | [`uuid.version()`](#uuidversionstr) | Detect RFC version of a UUID | New in `uuid@8.3` |
@@ -294,6 +296,32 @@ const v4options = {
 uuidv4(v4options); // RESULT
 ```
 
+### uuid.v4ToV7(uuid, key)
+
+Convert a version 4 UUID created by [`v7ToV4()`](#uuidv7tov4uuid-key) back to the original version 7 UUID
+
+|  |  |
+| --- | --- |
+| `uuid` | The v4 UUID `String` or `Uint8Array` to convert |
+| `key` | `Uint8Array` of 16 or more bytes. The secret key that was passed to `v7ToV4()` |
+| _returns_ | UUID of same type as the `uuid` param (`String` or `Uint8Array`) |
+
+```javascript --run
+import { v4ToV7 } from 'uuid';
+
+// Same key as the v7ToV4() example below
+const key = Uint8Array.of(
+  0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01,
+  0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe
+);
+
+v4ToV7('2463c780-7fca-4def-8c3f-7b1a2c4d5e6f', key); // RESULT
+```
+
+<!-- prettier-ignore -->
+> [!IMPORTANT]
+> This conversion is unauthenticated: any well-formed v4 UUID will decode to _some_ v7 UUID.  Do not trust decoded values as authentic; validate them against application state (existence, authorization) before use.
+
 ### uuid.v5(name, namespace[, buffer[, offset]])
 
 Create an RFC version 5 (namespace w/ SHA-1) UUID
@@ -388,6 +416,35 @@ import { v7 as uuidv7 } from 'uuid';
 
 uuidv7(); // RESULT
 ```
+
+### uuid.v7ToV4(uuid, key)
+
+Convert a version 7 UUID to a version 4 UUID by masking its timestamp with [SipHash-2-4](https://en.wikipedia.org/wiki/SipHash)
+
+This allows storing time-ordered v7 UUIDs in databases (better index locality) while emitting RFC-valid v4 UUIDs externally, without revealing the embedded timestamp. The conversion is exactly reversible with [`v4ToV7()`](#uuidv4tov7uuid-key) and the same key, and is interoperable with the [uuid47 reference implementation](https://github.com/n2p5/uuid47) and [Symfony's `Uuid47Transformer`](https://symfony.com/blog/new-in-symfony-8-1-misc-improvements-part-1#convert-between-uuidv7-and-uuidv4).
+
+|  |  |
+| --- | --- |
+| `uuid` | The v7 UUID `String` or `Uint8Array` to convert |
+| `key` | `Uint8Array` of 16 or more bytes. Use cryptographically random bytes, keep them secret, and keep them stable for the lifetime of the stored UUIDs. A key longer than 16 bytes is hashed with SHA-256 and truncated to 16 bytes, matching Symfony's `Uuid47Transformer` |
+| _returns_ | UUID of same type as the `uuid` param (`String` or `Uint8Array`) |
+
+```javascript --run
+import { v7ToV4 } from 'uuid';
+
+// Note: Hard-coded for demo purposes only. Use a securely-stored, random,
+// 16-byte key in production!
+const key = Uint8Array.of(
+  0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01,
+  0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe
+);
+
+v7ToV4('018f2d9f-9a2a-7def-8c3f-7b1a2c4d5e6f', key); // RESULT
+```
+
+<!-- prettier-ignore -->
+> [!IMPORTANT]
+> This is timestamp obfuscation, not authenticated encryption.  The mapping is deterministic by design (required for reversibility): under a fixed key, the same v7 UUID always yields the same v4 UUID, so emitted values are linkable across requests.  Confidentiality of the timestamp relies on the secrecy of the key.
 
 ### ~~uuid.v8()~~
 
